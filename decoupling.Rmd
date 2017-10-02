@@ -1,0 +1,218 @@
+---
+title: "Decoupling"
+output: github_document
+---
+
+This script explores how successive stages in the life cycle of a parasite may or may not be decoupled from one another. That is, if a parasite is large as a larva, is it large as an adult too?
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(GGally)
+
+options(stringsAsFactors = FALSE) # never have species lists as factors; always as character vectors
+
+# set theme
+theme.o <- theme_update(axis.text = element_text(colour="black", size = 15),
+                        axis.title = element_text(colour="black", size = 18, face = "bold", lineheight=0.25),
+                        axis.ticks = element_line(colour="black"),
+                        panel.border = element_rect(colour = "black",fill=NA),
+                        panel.grid.minor=element_blank(),
+                        panel.grid.major=element_line(color="gray",linetype = "dotted"),
+                        panel.background= element_rect(fill = NA))
+
+# import the life cycle database tables
+dataH <- read.csv(file="data/CLC_database_hosts.csv", header = TRUE, sep=",")
+dataL <- read.csv(file="data/CLC_database_lifehistory.csv", header = TRUE, sep=",")
+```
+
+Get body size. Remove asex species.
+
+```{r}
+dataL <- mutate(dataL, biovolume = 
+                  if_else(Shape %in% c("cylinder", "thread-like", "whip"), 
+                          pi * (Width/2)^2 * Length, # calculate volume as a cylinder
+                          if_else(Shape %in% c("coiled", "sphere", "ellipsoid"),
+                                  4/3 * pi * Length/2 * Width/4, # calculate volume as a ellipsoid
+                                  Length * Width # calculate volume as area for remaining ribbon, leaf shapes
+                                  )),
+                biovolume = biovolume * 1.1) # covert to biomass with assumed 1.1. g/cm3 tissue density
+dataL <- filter(dataL, is.na(Asexual)) # remove asexual species
+```
+
+The stage before the definitive host in simple life cycles is the propagule stage. We want to select the stage that best reflects initial parasite size.
+
+```{r, message=FALSE, warning=FALSE}
+# id species that hatch or not
+eggos <- filter(dataL, Host.no == 0)%>%
+  select(Parasite.species, Egg.hatch)%>%
+  mutate(propagule_selector = if_else(Egg.hatch != "eaten", "free larva", "egg"))%>%
+  select(-Egg.hatch)%>%
+  na.omit%>%distinct()
+
+# determine whether there is a size measurement for embryo or egg stages
+eggos2 <- filter(dataL, Host.no == 0)%>%
+  select(Parasite.species, Stage, biovolume)%>%
+  group_by(Parasite.species, Stage)%>%
+  summarize(x = sum(!is.na(biovolume)))
+
+# combine and spread these two tables
+eggos2 <- left_join(eggos, eggos2)
+eggos2 <- spread(na.omit(eggos2), Stage, x)
+
+# identify the stage where growth starts for each species
+eggos2 <- mutate(eggos2, propagule_selector = if_else(propagule_selector == 'free larva', 'free larva',
+                                                       if_else(embryo > 0, 'embryo', 'egg')))
+
+# add selector variable to main life history table
+eggos2 <- select(eggos2, Parasite.species, propagule_selector)
+dataL <- left_join(dataL, eggos2)
+rm(eggos, eggos2)
+
+# remove propagule measurements that do not reflect initial size
+dataL <- filter(dataL, !(Host.no == 0 & Stage != propagule_selector))
+```
+
+Select relevant columns and calculate species averages.
+
+```{r}
+dataL.sp <- select(dataL, Parasite.species, Host.no, biovolume)%>%
+  group_by(Parasite.species, Host.no)%>%
+  summarize(biovolume = mean(biovolume, na.rm = T))%>%
+  mutate(biovolume = log10(biovolume))
+```
+
+Make long data wide, and then...
+
+```{r}
+dataL.sp <- spread(dataL.sp, key = Host.no, value = biovolume)
+dataL.sp <- rename(dataL.sp, propagule = `0`, first_host = `1`, second_host = `2`,
+                   third_host = `3`, fourth_host = `4`, fifth_host = `5`)
+```
+
+...add life cycle lengths to the adult sizes.
+
+```{r, message=FALSE, warning=FALSE}
+maxLCL <- group_by(dataH, Parasite.species)%>%summarize(maxLCL = max(Host.no))
+minLCL <- filter(dataH, Facultative == "no")%>%
+  group_by(Parasite.species)%>%summarise(minLCL = length(unique(Host.no)))
+dataL.sp <- left_join(dataL.sp, maxLCL)
+dataL.sp <- left_join(dataL.sp, minLCL)
+```
+
+Make life cycle length a nice factor for plotting, and add 'parasite group' back to the table.
+
+```{r}
+dataL.sp <- mutate( ungroup(dataL.sp), maxLCL.fac = if_else(maxLCL > 3, "4", as.character(maxLCL)))%>%
+  mutate(maxLCL.fac = factor(maxLCL.fac, labels = c("1", "2", "3", ">3")))
+```
+```{r}
+dataL.sp <- left_join(dataL.sp, select(dataL, Parasite.species, Parasite.group)%>%distinct() )
+```
+
+Now look at correlations between body size for each life cycle group (1-host, 2-host, etc). First, there is not much of a correlation between propagule and adult size in simple life cycle parasites.
+
+```{r}
+# just simple cycles
+cor( filter(dataL.sp, maxLCL == 1)%>%select(propagule:first_host), use = "pairwise.complete.obs")
+```
+
+For the 2-host complex life cycle parasites, we plot the correlation matrix. They are all positive. Overall, the correlation coefficients between consecutive stages are ~ 0.4. They tend to be lower within helminth groups, though still positive.
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(filter(dataL.sp, maxLCL == 2), columns = c("propagule", "first_host", "second_host"),
+        mapping = aes(color = Parasite.group))
+```
+
+Make the same plot for 3-host parasites. Again, the correlations are mostly positive, though there is more variation. Especially the cestodes seem to buck the pattern, with size in the first and second host being negatively correlated. There are two few species with long cycles (> 3 hosts) and body sizes to produce a similar plot.
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(filter(dataL.sp, maxLCL == 3), columns = c("propagule", "first_host", "second_host", "third_host"),
+        mapping = aes(color = Parasite.group))
+```
+
+The data support the idea that there are weak correlations between body sizes at consecutive stages in the life cycle.
+
+Let's move on to development time. First, wrangle the data in a similar way to body size.
+
+```{r}
+# calculate degree days, get species averages
+datadt <- mutate(dataL, dd = Development.time * (Temp - 5))%>%
+  select(Parasite.species, Host.no, dd)%>%
+  group_by(Parasite.species, Host.no)%>%
+  summarize(dd = mean(dd, na.rm = T))%>%
+  mutate(dd = log10(dd))
+
+# make long data wide, relabel columns
+datadt <- spread(datadt, key = Host.no, value = dd)
+datadt <- rename(datadt, propagule = `0`, first_host = `1`, second_host = `2`,
+                   third_host = `3`, fourth_host = `4`, fifth_host = `5`)
+
+# add life cycle lengths and parasite group
+datadt <- left_join(datadt, maxLCL)
+datadt <- left_join(datadt, minLCL)
+datadt <- left_join(datadt, select(dataL, Parasite.species, Parasite.group)%>%distinct() )
+
+# make nice factor for life cycle length for plotting
+datadt <- mutate( ungroup(datadt), maxLCL.fac = if_else(maxLCL > 3, "4", as.character(maxLCL)))%>%
+  mutate(maxLCL.fac = factor(maxLCL.fac, labels = c("1", "2", "3", ">3")))
+```
+
+Here is the correlation between propagule development rate and development rate in the first host. It's mildly positive.
+
+```{r}
+# just simple cycles
+cor( filter(datadt, maxLCL == 1)%>%select(propagule:first_host), use = "pairwise.complete.obs")
+```
+
+For 2-host cycles, most species do not develop in the propagule stage. The correlation of development rates in the first and second hosts are positive for acanths and cestodes, but negative for nematodes.
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(filter(datadt, maxLCL == 2), columns = c("propagule", "first_host", "second_host"),
+        mapping = aes(color = Parasite.group))
+```
+
+The same plot for 3-host parasites is very sparse, so there is not much that can be concluded from it.
+
+
+
+
+
+Moving on to host specificity.
+
+```{r}
+# import from host specificity analyses project
+datahs <- read.csv(file="data/hs_growth_out.csv", header = TRUE, sep=",")
+
+# select relevant columns (already species avgs) and spread the data
+datahs <- select(datahs, Parasite.species, Host.no, hs)%>%
+  spread(key = Host.no, value = hs)%>%
+  rename(first_host = `1`, second_host = `2`, third_host = `3`, fourth_host = `4`, fifth_host = `5`)
+
+# add life cycle lengths and parasite group
+datahs <- left_join(datahs, maxLCL)
+datahs <- left_join(datahs, minLCL)
+datahs <- left_join(datahs, select(dataL, Parasite.species, Parasite.group)%>%distinct() )
+
+# make nice factor for life cycle length for plotting
+datahs <- mutate( datahs, maxLCL.fac = if_else(maxLCL > 3, "4", as.character(maxLCL)))%>%
+  mutate(maxLCL.fac = factor(maxLCL.fac, labels = c("1", "2", "3", ">3")))
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(filter(datahs, maxLCL == 2), columns = c("first_host", "second_host"),
+        mapping = aes(color = Parasite.group))
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(filter(datahs, maxLCL == 3), columns = c("first_host", "second_host", "third_host"),
+        mapping = aes(color = Parasite.group))
+```
+
+
+
+
+
