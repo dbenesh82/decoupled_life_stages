@@ -252,16 +252,33 @@ decouple <- function(data, lcl, pg, host1, host2){
   
   # plot results
   out_plot <- ggplot(data.frame(r_vec), aes(x = r_vec)) + 
-    geom_histogram(binwidth = 0.04) +
+    geom_density(fill = "darkgray", alpha = 0.25) +
     labs(x = "Correlation coefficient") +
     geom_vline(aes(xintercept = obs), color = 'red', linetype = 'dashed', size = 1.5) +
     scale_y_continuous(expand = c(0,0)) +
-    annotate("text",
-             x = quantile(r_vec, probs = 0.025),
-             y = 500, 
-             label = paste(trait, "\n", pg, "\n", lcl, "-host cycles", sep = ""))
+    theme(axis.title = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          panel.grid.major.y = element_blank())
   
-    # put results in a list
+  rangex <- max(ggplot_build(out_plot)$data[[1]]$x) - min(ggplot_build(out_plot)$data[[1]]$x)
+  rangey <- max(ggplot_build(out_plot)$data[[1]]$y) - min(ggplot_build(out_plot)$data[[1]]$y)
+  
+  out_plot <- out_plot + # add label
+    annotate("text",
+             size = 2,
+             # put at 15% of the range along x-axis
+             x = min(ggplot_build(out_plot)$data[[1]]$x) + rangex * 0.2,
+             # put at 75% of the range along y-axis
+             y = min(ggplot_build(out_plot)$data[[1]]$y) + rangey * 0.75,
+             # add label based on group used
+             label = paste( paste(toupper(substr(pg,1,1)), substr(pg,2,nchar(pg)), sep = "")," ",
+                            tolower(trait), " in\n",
+                           gsub("_", " ", host1), " vs ", gsub("_", " ", host2), ",\n",
+                           lcl, "-host cycles",
+                           sep = ""))
+  
+  # put results in a list
   results <- list(trait = trait, pg = pg, lcl = lcl, n = length(y),
                   obs = obs, expected = expected, p_val = p_val, out_plot = out_plot)
   return(results)
@@ -290,32 +307,142 @@ hs_out9 <- decouple(data = datahs, lcl = 3, pg = 'nematode', 'second_host', 'thi
 ```
 
 
+
+
 ```{r}
-bind_rows(data.frame(dt_out1[1:7]),
-          data.frame(dt_out2[1:7]),
-          data.frame(dt_out3[1:7]),
-          data.frame(hs_out1[1:7]),
-          data.frame(hs_out2[1:7]),
-          data.frame(hs_out3[1:7]),
-          data.frame(hs_out4[1:7]),
-          data.frame(hs_out5[1:7]),
-          data.frame(hs_out6[1:7]),
-          data.frame(hs_out7[1:7]),
-          data.frame(hs_out8[1:7]),
-          data.frame(hs_out9[1:7])
-          )
+# data <- dataL.sp
+# pg <- "cestode"
+# lcl <- 2
+# host1 <- "first_host"
+# host2 <- "second_host"
+
+decouple_size <- function(data, lcl, pg, host1, host2){
+  # this function takes in a data table and filtering criteria
+  # it returns a list related to the specified cross-stage correlation
+  
+  # only for body size, because it randomly adds growth to size in previous host
+  trait <- "Body size"
+  
+  # filter data
+  test <- filter(data, maxLCL == lcl, Parasite.group == pg)%>%
+    select(host1, host2)%>%
+    na.omit()
+  
+  # calculate observed correlation
+  obs <- cor(test[[host1]], test[[host2]])
+  
+  # permutation to get random expectations
+  # first need to get random expected growth, so calculate absolute growth between consecutive stages
+  growth <- 10^test[[host2]] - 10^test[[host1]]
+  # then permute taking random growth and adding it to size in lower level host
+  r_vec <- numeric()
+  for(i in 1:9999){
+    grew <- sample( growth, length(growth), replace = F) # rand sample of growth amounts
+    y <- 10^test[[host1]] + grew # add growth to size in host1, can result in negatives 
+    y <- log10(y) # re-transform
+    
+    r <- cor( test[[host1]], y, use = 'complete.obs')
+    r_vec <- c(r_vec, r)
+  }
+  
+  # median from permutations
+  expected <- median(r_vec)
+  
+  # permutation p-val
+  test_stat <- obs - expected # calculate test statistic
+  r_vec0 <- abs(r_vec - expected) # center permutations, make all positive to calc 2-sided p-value
+  p_val <- sum( r_vec0 >= abs(test_stat) ) / ( length(r_vec0) + 1 ) # how many permutations greater than observed?
+  
+  # plot results
+  out_plot <- ggplot(data.frame(r_vec), aes(x = r_vec)) + 
+    geom_density(fill = "darkgray", alpha = 0.25) +
+    labs(x = "Correlation coefficient") +
+    geom_vline(aes(xintercept = obs), color = 'red', linetype = 'dashed', size = 1.5) +
+    scale_y_continuous(expand = c(0,0)) +
+    theme(axis.title = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          panel.grid.major.y = element_blank())
+  
+  rangex <- max(ggplot_build(out_plot)$data[[1]]$x) - min(ggplot_build(out_plot)$data[[1]]$x)
+  rangey <- max(ggplot_build(out_plot)$data[[1]]$y) - min(ggplot_build(out_plot)$data[[1]]$y)
+  
+  out_plot <- out_plot + # add label
+    annotate("text",
+             size = 2,
+             # put at 15% of the range along x-axis
+             x = min(ggplot_build(out_plot)$data[[1]]$x) + rangex * 0.2,
+             # put at 75% of the range along y-axis
+             y = min(ggplot_build(out_plot)$data[[1]]$y) + rangey * 0.75,
+             # add label based on group used
+             label = paste( paste(toupper(substr(pg,1,1)), substr(pg,2,nchar(pg)), sep = "")," ",
+                            tolower(trait), " in\n",
+                           gsub("_", " ", host1), " vs ", gsub("_", " ", host2), ",\n",
+                           lcl, "-host cycles",
+                           sep = ""))
+  
+  # put results in a list
+  results <- list(trait = trait, pg = pg, lcl = lcl, n = length(y),
+                  obs = obs, expected = expected, p_val = p_val, out_plot = out_plot)
+  return(results)
+}
 ```
 
 
+  
+```{r}
+bs_out1 <- decouple_size(data = dataL.sp, lcl = 2, pg = 'acanthocephalan', 'first_host', 'second_host')
+bs_out2 <- decouple_size(data = dataL.sp, lcl = 2, pg = 'cestode', 'first_host', 'second_host')
+bs_out3 <- decouple_size(data = dataL.sp, lcl = 2, pg = 'nematode', 'first_host', 'second_host')
+bs_out4 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'acanthocephalan', 'first_host', 'second_host')
+bs_out5 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'cestode', 'first_host', 'second_host')
+bs_out6 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'nematode', 'first_host', 'second_host')
+bs_out7 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'acanthocephalan', 'second_host', 'third_host')
+bs_out8 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'cestode', 'second_host', 'third_host')
+bs_out9 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'nematode', 'second_host', 'third_host')
+```
 
 
 ```{r}
-growth <- read.csv(file="data/hs_growth_out.csv", header = TRUE, sep=",")
-growth <- select(growth, Parasite.species, Host.no, Stage, maxLCL, abs_diff)
-growth
+decoupled <- bind_rows(data.frame(dt_out1[1:7]),
+                       data.frame(dt_out2[1:7]),
+                       data.frame(dt_out3[1:7]),
+                       data.frame(hs_out1[1:7]),
+                       data.frame(hs_out2[1:7]),
+                       data.frame(hs_out3[1:7]),
+                       data.frame(hs_out4[1:7]),
+                       data.frame(hs_out5[1:7]),
+                       data.frame(hs_out6[1:7]),
+                       data.frame(hs_out7[1:7]),
+                       data.frame(hs_out8[1:7]),
+                       data.frame(hs_out9[1:7]),
+                       data.frame(bs_out1[1:7]),
+                       data.frame(bs_out2[1:7]),
+                       data.frame(bs_out3[1:7]),
+                       data.frame(bs_out4[1:7]),
+                       data.frame(bs_out5[1:7]),
+                       data.frame(bs_out6[1:7]),
+                       data.frame(bs_out7[1:7]),
+                       data.frame(bs_out8[1:7]),
+                       data.frame(bs_out9[1:7])
+                       )
+
 ```
 
 ```{r}
+sum(decoupled$p_val < 0.05) / length(decoupled$p_val) # percent significant
+```
+```{r}
+sum( (decoupled$obs - decoupled$exp) > 0) / length(decoupled$expected) # percent more positive than expected
+```
 
+```{r}
+source("src/multiplot.R")
+multiplot(dt_out1$out_plot, dt_out2$out_plot, dt_out3$out_plot, hs_out1$out_plot,
+          hs_out2$out_plot, hs_out3$out_plot, hs_out4$out_plot, hs_out5$out_plot,
+          hs_out6$out_plot, hs_out7$out_plot, hs_out8$out_plot, hs_out9$out_plot,
+          bs_out1$out_plot, bs_out2$out_plot, bs_out3$out_plot, bs_out4$out_plot,
+          bs_out5$out_plot, bs_out6$out_plot, bs_out8$out_plot, bs_out9$out_plot,
+          cols = 4)
 ```
 
