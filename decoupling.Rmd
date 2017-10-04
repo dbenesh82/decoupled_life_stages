@@ -213,6 +213,109 @@ ggpairs(filter(datahs, maxLCL == 3), columns = c("first_host", "second_host", "t
 ```
 
 
+For every correlation of interest, let's get the sample size, the correlation, and a distribution of expected values via permutation.
+
+```{r}
+decouple <- function(data, lcl, pg, host1, host2){
+  # this function takes in a data table and filtering criteria
+  # it returns a list related to the specified cross-stage correlation
+  
+  # if development time data, then trait is dt, if it is host specificity table, then hs
+  if(identical(data, datadt)) {
+    trait <- "Development time"} else if(identical(data, datahs)) {
+      trait <- "Host specificity"
+    }
+  
+  # filter data
+  test <- filter(data, maxLCL == lcl, Parasite.group == pg)%>%
+    select(host1, host2)%>%
+    na.omit()
+  
+  # calculate observed correlation
+  obs <- cor(test[[host1]], test[[host2]])
+  
+  # permutation to get random expectations
+  r_vec <- numeric()
+  for(i in 1:9999){
+    y <- sample(test[[host2]], length( test[[host2]] ), replace = F)
+    r <- cor( test[[host1]], y)
+    r_vec <- c(r_vec, r)
+  }
+  
+  # median from permutations
+  expected <- median(r_vec)
+  
+  # permutation p-val
+  test_stat <- obs - expected # calculate test statistic
+  r_vec0 <- abs(r_vec - expected) # center permutations, make all positive to calc 2-sided p-value
+  p_val <- sum( r_vec0 >= abs(test_stat) ) / ( length(r_vec0) + 1 ) # how many permutations greater than observed?
+  
+  # plot results
+  out_plot <- ggplot(data.frame(r_vec), aes(x = r_vec)) + 
+    geom_histogram(binwidth = 0.04) +
+    labs(x = "Correlation coefficient") +
+    geom_vline(aes(xintercept = obs), color = 'red', linetype = 'dashed', size = 1.5) +
+    scale_y_continuous(expand = c(0,0)) +
+    annotate("text",
+             x = quantile(r_vec, probs = 0.025),
+             y = 500, 
+             label = paste(trait, "\n", pg, "\n", lcl, "-host cycles", sep = ""))
+  
+    # put results in a list
+  results <- list(trait = trait, pg = pg, lcl = lcl, n = length(y),
+                  obs = obs, expected = expected, p_val = p_val, out_plot = out_plot)
+  return(results)
+}
+```
+
+ 
+```{r}
+# developmental time cross-stage correlations
+dt_out1 <- decouple(data = datadt, lcl = 2, pg = 'acanthocephalan', 'first_host', 'second_host')
+dt_out2 <- decouple(data = datadt, lcl = 2, pg = 'cestode', 'first_host', 'second_host')
+dt_out3 <- decouple(data = datadt, lcl = 2, pg = 'nematode', 'first_host', 'second_host')
+```
+
+```{r}
+# host specificity cross stage correlations
+hs_out1 <- decouple(data = datahs, lcl = 2, pg = 'acanthocephalan', 'first_host', 'second_host')
+hs_out2 <- decouple(data = datahs, lcl = 2, pg = 'cestode', 'first_host', 'second_host')
+hs_out3 <- decouple(data = datahs, lcl = 2, pg = 'nematode', 'first_host', 'second_host')
+hs_out4 <- decouple(data = datahs, lcl = 3, pg = 'acanthocephalan', 'first_host', 'second_host')
+hs_out5 <- decouple(data = datahs, lcl = 3, pg = 'cestode', 'first_host', 'second_host')
+hs_out6 <- decouple(data = datahs, lcl = 3, pg = 'nematode', 'first_host', 'second_host')
+hs_out7 <- decouple(data = datahs, lcl = 3, pg = 'acanthocephalan', 'second_host', 'third_host')
+hs_out8 <- decouple(data = datahs, lcl = 3, pg = 'cestode', 'second_host', 'third_host')
+hs_out9 <- decouple(data = datahs, lcl = 3, pg = 'nematode', 'second_host', 'third_host')
+```
 
 
+```{r}
+bind_rows(data.frame(dt_out1[1:7]),
+          data.frame(dt_out2[1:7]),
+          data.frame(dt_out3[1:7]),
+          data.frame(hs_out1[1:7]),
+          data.frame(hs_out2[1:7]),
+          data.frame(hs_out3[1:7]),
+          data.frame(hs_out4[1:7]),
+          data.frame(hs_out5[1:7]),
+          data.frame(hs_out6[1:7]),
+          data.frame(hs_out7[1:7]),
+          data.frame(hs_out8[1:7]),
+          data.frame(hs_out9[1:7])
+          )
+```
+
+
+
+
+```{r}
+growth <- read.csv(file="data/hs_growth_out.csv", header = TRUE, sep=",")
+growth <- select(growth, Parasite.species, Host.no, Stage, maxLCL, abs_diff)
+growth
+```
+
+```{r}
+
+```
 
