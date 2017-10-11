@@ -1,7 +1,7 @@
 Decoupled life stages
 ================
 
-This script explores how successive stages in the life cycle of a parasite may or may not be decoupled from one another. In other words, are there correlations for traits across the stages of a parasite's life cycle? For example, if a parasite is large as a larva, is it large as an adult too? If a parasite develops slowly as a larva, does it develop slowly as an adult too? From an adaptationist perspective, we expect no correlations, because each stage should be able to adapt somewhat independently to its niche/host. That said, correlations across stages may exist for both adaptive reasons (e.g. a correlation in the quality of intermediate and definitive hosts) and non-adaptive reasons (e.g. developmental constraints). I explore this using a [database](http://onlinelibrary.wiley.com/doi/10.1002/ecy.1680/suppinfo) of helminth (parasitic worm) life cycles.
+This script explores how successive stages in the life cycle of a parasite may or may not be decoupled from one another. In other words, are there trait correlations spanning the multiple stages of a parasite's life cycle? For example, if a parasite is large as a larva, is it large as an adult too? If a parasite develops slowly as a larva, does it develop slowly as an adult too? From an adaptationist perspective, we expect no correlations, because each stage should be able to evolve independently to its niche/host. That said, correlations across stages may exist for both adaptive reasons (e.g. a correlation in the quality of intermediate and definitive hosts) and non-adaptive reasons (e.g. developmental constraints). I explore this using a [database](http://onlinelibrary.wiley.com/doi/10.1002/ecy.1680/suppinfo) of helminth (parasitic worm) life cycles.
 
 Import the data, set plotting theme.
 
@@ -27,7 +27,7 @@ dataH <- read.csv(file="data/CLC_database_hosts.csv", header = TRUE, sep=",")
 dataL <- read.csv(file="data/CLC_database_lifehistory.csv", header = TRUE, sep=",")
 ```
 
-We start by looking at body size correlations across life stages. On the basis of length, width, and shape, we calculate a body mass for parasites. Also, remove asex species.
+We'll look at three traits measured at the 'stage' level in the database: body size, development time, and host specificity. We start by looking at body size correlations across life stages. On the basis of length, width, and shape, we calculate a body mass for parasites. Also, we remove asexual species.
 
 ``` r
 dataL <- mutate(dataL, biovolume = 
@@ -74,7 +74,7 @@ rm(eggos, eggos2)
 dataL <- filter(dataL, !(Host.no == 0 & Stage != propagule_selector))
 ```
 
-Select relevant columns and calculate average body sizes for each species at each stage of the life cycle.
+For each species, we calculate average body sizes at each stage of the life cycle.
 
 ``` r
 dataL.sp <- select(dataL, Parasite.species, Host.no, biovolume)%>%
@@ -83,7 +83,7 @@ dataL.sp <- select(dataL, Parasite.species, Host.no, biovolume)%>%
   mutate(biovolume = log10(biovolume))
 ```
 
-Next we make the long data wide, such that parasite body size in the first host, second host, etc. are in the sample row.
+Next we make the long data wide, such that parasite body size in the first host, second host, etc. are in separate columns.
 
 ``` r
 dataL.sp <- spread(dataL.sp, key = Host.no, value = biovolume)
@@ -91,7 +91,7 @@ dataL.sp <- rename(dataL.sp, propagule = `0`, first_host = `1`, second_host = `2
                    third_host = `3`, fourth_host = `4`, fifth_host = `5`)
 ```
 
-Add life cycle lengths to the adult sizes.
+Add life cycle lengths to the body size table.
 
 ``` r
 maxLCL <- group_by(dataH, Parasite.species)%>%summarize(maxLCL = max(Host.no))
@@ -112,7 +112,7 @@ dataL.sp <- mutate( ungroup(dataL.sp), maxLCL.fac = if_else(maxLCL > 3, "4", as.
 dataL.sp <- left_join(dataL.sp, select(dataL, Parasite.species, Parasite.group)%>%distinct() )
 ```
 
-Now the data is suitable for looking at body size correlations. We look separately each life cycle length (1-host, 2-host, etc). First, there is not much of a correlation between propagule and adult size in simple life cycle parasites.
+Now we can look at body size correlations. We look separately each life cycle length (1-host, 2-host, etc). First, there is not much of a correlation between propagule and adult size in simple life cycle parasites.
 
 ``` r
 cor( filter(dataL.sp, maxLCL == 1)%>%select(propagule:first_host), use = "pairwise.complete.obs")
@@ -140,9 +140,9 @@ ggpairs(filter(dataL.sp, maxLCL == 3), columns = c("propagule", "first_host", "s
 
 ![](decoupling_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-11-1.png)
 
-The data support the idea that there are weak correlations between body sizes at consecutive life stages. This is expected to some degree, because big larvae will not be tiny adults, unless the all other worms grow extensively as adults. Below, I used a permutation to try to deal with 'built-in' correlation.
+The data support the idea that there are weak correlations between body sizes at consecutive life stages. This is expected to some degree, because big larvae will not be tiny adults, unless all worms grow extensively as adults (i.e. only if larval growth is a small fraction of total growth). Below, I use a permutation to try and deal with this 'built-in' correlation.
 
-Let's move on to the next trait: development time. First, wrangle the data in a similar way to body size. We focus on degree days as the measure of development time, given that development is usually a function of temperature.
+Let's move on to the next trait: development time. First, we wrangle the data in a similar way to body size. We focus on degree days as the measure of development time, given that development is usually a function of temperature and this at least partially accounts for temperature's effect.
 
 ``` r
 # calculate degree days, get species averages
@@ -177,7 +177,7 @@ cor( filter(datadt, maxLCL == 1)%>%select(propagule:first_host), use = "pairwise
     ## propagule  1.0000000  0.2381676
     ## first_host 0.2381676  1.0000000
 
-We can again plot a correlation matrix for worm with 2-host cycles. Most of these species do not develop in the propagule stage (i.e. while free in the environment, they do not embryonate or develop before hatching). The correlation of development times in the first and second hosts are positive for acanths and cestodes, but slightly negative for nematodes. This implies that long larval development is associated with long adult development, which is somewhat surprising, as it is not consistent with expected tradeoffs.
+We can again plot a correlation matrix for worms with 2-host cycles. Most of these species do not develop in the propagule stage (i.e. while free in the environment, they do not embryonate or develop before hatching), hence the absence of propagule correlations. The correlation of development times in the first and second hosts are positive for acanths and cestodes, but slightly negative for nematodes. This implies that long larval development is associated with long adult development, which is somewhat surprising, as one might expect more larval development to shorten adult development.
 
 ``` r
 ggpairs(filter(datadt, maxLCL == 2), columns = c("propagule", "first_host", "second_host"),
@@ -195,7 +195,7 @@ ggpairs(filter(datadt, maxLCL == 3), columns = c("propagule", "first_host", "sec
 
 ![](decoupling_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-15-1.png)
 
-Let's look at the third trait: host specificity. Is host specificity at consecutive life stages correlated? We again wrangle the data into a usable format. We are using output from this [script](GITHUB), in which a host specificity index is calculated that accounts for the taxonomic similarity of hosts.
+Let's look at the third trait: host specificity. Is host specificity at consecutive life stages correlated? We again wrangle the data into a usable format. We are using output from this [script](https://github.com/dbenesh82/host_specificity_lcl_analyses/blob/master/calc_specificity/calc_specificity_patterns.md), in which a host specificity index is calculated that accounts for the taxonomic similarity of hosts.
 
 ``` r
 # import from host specificity analyses project
@@ -216,7 +216,7 @@ datahs <- mutate( datahs, maxLCL.fac = if_else(maxLCL > 3, "4", as.character(max
   mutate(maxLCL.fac = factor(maxLCL.fac, labels = c("1", "2", "3", ">3")))
 ```
 
-Produce the correlation matrix for two-host cycles. The distribution of the host specificity index is more right-skewed than the previous variables. That is not too surprising. Many parasites have only been recorded for one or two hosts at a given life stage. The correlations across stages are positive, but low.
+We produce the correlation matrix for host specificity for two-host cycles. The distribution of the host specificity index is more right-skewed than the previous variables. That is not too surprising. Many parasites have only been recorded for one or two hosts at a given life stage. The correlations across stages are positive, but low.
 
 ``` r
 ggpairs(filter(datahs, maxLCL == 2), columns = c("first_host", "second_host"),
@@ -225,7 +225,7 @@ ggpairs(filter(datahs, maxLCL == 2), columns = c("first_host", "second_host"),
 
 ![](decoupling_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-17-1.png)
 
-We make the same figure for three-host cycles, and again find positive, but low correlations.
+We make the same figure for three-host cycles and again find positive, but low correlations.
 
 ``` r
 ggpairs(filter(datahs, maxLCL == 3), columns = c("first_host", "second_host", "third_host"),
@@ -234,7 +234,7 @@ ggpairs(filter(datahs, maxLCL == 3), columns = c("first_host", "second_host", "t
 
 ![](decoupling_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-18-1.png)
 
-Now, we have looked at a lot of correlations, and they tend to be positive. But they also vary in sample sizes, distributions, expected correlations (e.g. expected to be positive for growth). To get more of an overview, let's get the sample size, the observed correlation, the expected correlation, and a plot showing the observed value compared to the expected distribution. For this, we make a function that we can use for different subsets of the data (filtered by life cycle length and parasite group).
+Now, we have looked at a lot of correlations, and they tend to be positive. But they also vary in sample sizes, distributions, and null expectations (e.g. expected to be positive for growth). To get more of an overview, let's get the sample size, the observed correlation, the expected correlation, and a plot showing the observed value compared to the expected distribution. For this, we make a function that we can use for different subsets of the data (filtered by life cycle length and parasite group).
 
 ``` r
 decouple <- function(data, lcl, pg, host1, host2){
@@ -342,7 +342,7 @@ hs_out8 <- decouple(data = datahs, lcl = 3, pg = 'cestode', 'second_host', 'thir
 hs_out9 <- decouple(data = datahs, lcl = 3, pg = 'nematode', 'second_host', 'third_host')
 ```
 
-We need to update this `decouple` function for comparing body size. Instead of randomly combining size in host 1 and host 2 to get a random expected distribution of correlations, we sample growth amounts by worms. We add this random amount of growth to the parasite size in the previous host. Thus, we are asking are the correlations more positive than expected.
+We need to update this `decouple` function for body size. Instead of randomly combining size in host 1 and size in host 2 to get a null distribution of correlations, we randomly sample growth of worms. We add this randomly sampled growth to parasite size in the previous host. Thus, we are asking: are the cross-stage body size correlations more positive than expected, given a random amount of growth?
 
 ``` r
 # test values
@@ -431,6 +431,8 @@ decouple_size <- function(data, lcl, pg, host1, host2){
 }
 ```
 
+Run the function for every combination of life cycle length and parasite taxa.
+
 ``` r
 bs_out1 <- decouple_size(data = dataL.sp, lcl = 2, pg = 'acanthocephalan', 'first_host', 'second_host')
 bs_out2 <- decouple_size(data = dataL.sp, lcl = 2, pg = 'cestode', 'first_host', 'second_host')
@@ -444,7 +446,7 @@ bs_out9 <- decouple_size(data = dataL.sp, lcl = 3, pg = 'nematode', 'second_host
 # throws errors, as log transform of negative values not possible
 ```
 
-We combine info from all these correlations into a dataframe. In some cases, sample sizes are obviously too low to be informative.
+We combine info from all these correlations into a dataframe.
 
 ``` r
 decoupled <- bind_rows(data.frame(dt_out1[1:7]),
@@ -479,69 +481,69 @@ decoupled
 ```
 
     ##               trait              pg lcl   n         obs      expected
-    ## 1         Devo time acanthocephalan   2  16  0.50446016  0.0030282271
-    ## 2         Devo time         cestode   2  39  0.76943392 -0.0003807470
-    ## 3         Devo time        nematode   2  47 -0.12638948  0.0012762554
+    ## 1         Devo time acanthocephalan   2  16  0.50446016  1.279458e-03
+    ## 2         Devo time         cestode   2  39  0.76943392 -1.288116e-03
+    ## 3         Devo time        nematode   2  47 -0.12638948  8.222781e-05
     ## 4         Devo time acanthocephalan   3   1          NA            NA
-    ## 5         Devo time         cestode   3   8 -0.49629385  0.0444478918
-    ## 6         Devo time        nematode   3   2 -1.00000000  1.0000000000
+    ## 5         Devo time         cestode   3   8 -0.49629385  4.847727e-02
+    ## 6         Devo time        nematode   3   2 -1.00000000  1.000000e+00
     ## 7         Devo time acanthocephalan   3   0          NA            NA
-    ## 8         Devo time         cestode   3   2 -1.00000000 -1.0000000000
+    ## 8         Devo time         cestode   3   2 -1.00000000  1.000000e+00
     ## 9         Devo time        nematode   3   0          NA            NA
-    ## 10 Host specificity acanthocephalan   2  58  0.17281693 -0.0003150558
-    ## 11 Host specificity         cestode   2 279  0.12836072 -0.0009213763
-    ## 12 Host specificity        nematode   2 236  0.12968419 -0.0016020803
-    ## 13 Host specificity acanthocephalan   3  22  0.30368535  0.0055892296
-    ## 14 Host specificity         cestode   3  49  0.10196941 -0.0013632968
-    ## 15 Host specificity        nematode   3  54  0.23257333  0.0017573512
-    ## 16 Host specificity acanthocephalan   3  22  0.26154271  0.0012411040
-    ## 17 Host specificity         cestode   3  49  0.08641958 -0.0023422461
-    ## 18 Host specificity        nematode   3  57  0.14167163  0.0044601662
-    ## 19        Body size acanthocephalan   2  41  0.29623153  0.0632109961
-    ## 20        Body size         cestode   2 184  0.25494247  0.1235933290
-    ## 21        Body size        nematode   2 152  0.13297407  0.1061441055
-    ## 22        Body size acanthocephalan   3   7  0.54996430  0.2580400057
-    ## 23        Body size         cestode   3  35 -0.31844540  0.0380656160
-    ## 24        Body size        nematode   3  23  0.70715141  0.3900226808
-    ## 25        Body size acanthocephalan   3  11  0.31890684  0.1335807653
-    ## 26        Body size         cestode   3  46  0.14665414  0.1559402527
-    ## 27        Body size        nematode   3  25  0.38993006  0.0627981215
+    ## 10 Host specificity acanthocephalan   2  58  0.17281693 -1.151910e-03
+    ## 11 Host specificity         cestode   2 279  0.12836072 -7.642128e-04
+    ## 12 Host specificity        nematode   2 236  0.12968419  5.749383e-04
+    ## 13 Host specificity acanthocephalan   3  22  0.30368535  8.938242e-03
+    ## 14 Host specificity         cestode   3  49  0.10196941 -1.629423e-03
+    ## 15 Host specificity        nematode   3  54  0.23257333  9.536276e-04
+    ## 16 Host specificity acanthocephalan   3  22  0.26154271 -4.708915e-03
+    ## 17 Host specificity         cestode   3  49  0.08641958 -2.068815e-03
+    ## 18 Host specificity        nematode   3  57  0.14167163  2.566286e-03
+    ## 19        Body size acanthocephalan   2  41  0.29623153  6.394090e-02
+    ## 20        Body size         cestode   2 184  0.25494247  1.245809e-01
+    ## 21        Body size        nematode   2 152  0.13297407  1.059307e-01
+    ## 22        Body size acanthocephalan   3   7  0.54996430  2.608404e-01
+    ## 23        Body size         cestode   3  35 -0.31844540  3.690392e-02
+    ## 24        Body size        nematode   3  23  0.70715141  3.914213e-01
+    ## 25        Body size acanthocephalan   3  11  0.31890684  1.297752e-01
+    ## 26        Body size         cestode   3  46  0.14665414  1.579341e-01
+    ## 27        Body size        nematode   3  25  0.38993006  6.586441e-02
     ##     p_val
-    ## 1  0.0481
+    ## 1  0.0476
     ## 2  0.0000
-    ## 3  0.3992
+    ## 3  0.3956
     ## 4      NA
-    ## 5  0.1657
-    ## 6  0.4947
+    ## 5  0.1634
+    ## 6  0.4951
     ## 7      NA
-    ## 8  0.9999
+    ## 8  0.4953
     ## 9      NA
-    ## 10 0.1910
-    ## 11 0.0287
-    ## 12 0.0438
-    ## 13 0.1824
-    ## 14 0.4850
-    ## 15 0.1000
-    ## 16 0.2430
-    ## 17 0.5453
-    ## 18 0.3079
-    ## 19 0.1480
-    ## 20 0.0165
-    ## 21 0.6955
-    ## 22 0.5276
-    ## 23 0.0081
-    ## 24 0.0487
-    ## 25 0.5193
-    ## 26 0.9415
-    ## 27 0.0926
+    ## 10 0.1835
+    ## 11 0.0302
+    ## 12 0.0454
+    ## 13 0.1840
+    ## 14 0.4736
+    ## 15 0.0869
+    ## 16 0.2255
+    ## 17 0.5509
+    ## 18 0.3030
+    ## 19 0.1566
+    ## 20 0.0147
+    ## 21 0.6978
+    ## 22 0.5231
+    ## 23 0.0097
+    ## 24 0.0517
+    ## 25 0.5065
+    ## 26 0.9221
+    ## 27 0.0930
 
-Let's arbitrarily restrict ourselves to correlations with at least 10 species.
+In some cases, sample sizes are obviously too low to be informative. Let's arbitrarily restrict ourselves to correlations with at least 10 species.
 
 ``` r
 decoupled <- filter(decoupled, n > 10)
 ```
 
-That leaves 20 correlations. Of these, 7 are significant according to our two-sided permutation test, or 35 percent.
+That leaves 20 correlations. Of these, 6 are significant according to our two-sided permutation test, or 30 percent.
 
 In most cases, the correlations are more positive than we expected based on random permutations. In 85 percent of cases, the observed correlation coefficient was larger than the random expectation. We can also visualize how the observed correlations differed from expectations. For all 20 correlations, we plot the expected distribution, based on the permutations, and indicate the observed value with a red line. In most cases, the observed value is falling on the right-hand side of the distribution, i.e. the correlation is more positive than expected.
 
@@ -562,3 +564,5 @@ multiplot(dt_out1$out_plot, dt_out2$out_plot, dt_out3$out_plot, hs_out1$out_plot
 ```
 
 (Note: getting the text size for annotations correct in the figure is challenging and would take some more trial and error)
+
+In sum, this is mixed evidence for decoupling. There is an overabundance of positive correlations between traits expressed in successive hosts, but the correlations are generally weak.
